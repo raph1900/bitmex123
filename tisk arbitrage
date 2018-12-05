@@ -1,0 +1,134 @@
+
+from bitmex_websocket import BitMEXWebsocket
+from time import sleep
+import bitmex ,requests ,sqlite3 ,time, datetime
+#12120406
+jpy = 0.00883
+orderQ =190 #for xbt 386
+orderQ1 = 220 #for YEN 441
+reCheck = 0
+reCheck1 = 5000
+satoshi = 0.00000001
+conn1 = sqlite3.connect('realDB22.db')
+c = conn1.cursor()
+
+
+#c.execute('CREATE TABLE IF NOT EXISTS bob2 (id INTEGER, currency TEXT, entry_price REAL, order_status INTEGER, spread REAL, check1 REAL)')
+# c.execute("INSERT INTO orderStatus VALUES(145676566, '2016-01-01', 'Python', 5)")
+conn1.commit()
+
+ws = BitMEXWebsocket(endpoint="https://testnet.bitmex.com/api/v1", symbol="XBTUSD", api_key="CfMzmpqPN-DDrCqP9lZY5w7l", api_secret="y1sKgaF5_GH335tPRhomAXiLTvXS5sIjgjjydrcLDOQMqt_G")
+ws2 = BitMEXWebsocket(endpoint="https://testnet.bitmex.com/api/v1", symbol="XBTJPY", api_key="CfMzmpqPN-DDrCqP9lZY5w7l", api_secret="y1sKgaF5_GH335tPRhomAXiLTvXS5sIjgjjydrcLDOQMqt_G")
+client = bitmex.bitmex(api_key="wxzj3tk6ENGAiurrV-UZTUXm", api_secret="5-nw0SSjppyB3XY-NnxsnQj2rm646Ef-BJjv9plmJVWaEJNp") #conectig to the taking order section
+client.Order.Order_cancelAll().result()
+ordSta = c.execute('SELECT * FROM orderStatus WHERE id = 1').fetchall()[0][2] #checking the order status also if the bot shutting down
+ordSta1 = ordSta
+
+def telegramBot():
+    URL = "https://api.telegram.org/bot{}/".format("767245948:AAE16pouGIs1l7ZEHqqyh-8HWKza4pOr1JA")
+    telegram1 = str(reCheck)  + "Profit in staoshi = " +str(profit)+ "--------"+ str(profitUsd) + "Total balnce = " + str(profitNet) 
+    def get_url(url):
+        response = requests.get(url)
+        content = response.content.decode("utf8")
+        return content
+        
+    url = URL + "sendMessage?text={}&chat_id={}".format(telegram1, "300698292") 
+    get_url(url)
+    
+def read():
+    ordSta = c.execute('SELECT * FROM orderStatus WHERE id = 1').fetchall()[0][2] #checking the order status also if the bot shutting down
+    return
+ 
+
+
+def takeOrder():
+    global orderQ, orderQ1
+    c.execute('UPDATE orderStatus SET two = ? WHERE id = ?', (perDiff,2)) #the arb when order took
+    c.execute('UPDATE orderStatus SET two = ? WHERE id = ?', (profitNet,3)) #the arb when order took
+
+    XBTUSD1 = client.Order.Order_new(symbol='XBTUSD', orderQty=-orderQ,ordType= "Market").result() #takes a market order of XBTUSD
+    XBTUSD2  = XBTUSD1[0]["orderID"] #id order
+    XBTUSD3  = XBTUSD1[0]["price"] #id order
+    c.execute('UPDATE statistic SET datestamp = ? WHERE id = ?', (XBTUSD2, 1))
+    c.execute('UPDATE statistic SET datestamp = ? WHERE id = ?', (XBTUSD3, 2))
+    c.execute("INSERT INTO opuIN (currency, datestamp, keyword, id) VALUES(?, ?, ?,?)",("xbtusd", date, XBTUSD3, 1))
+    conn1.commit()
+    XBTJPY1 = client.Order.Order_new(symbol='XBTJPY', orderQty=orderQ1,ordType= "Market").result()
+    XBTJPY2  = XBTJPY1[0]["orderID"] #id order
+    XBTJPY3  = XBTJPY1[0]["price"] #id order
+    c.execute('UPDATE statistic SET datestamp = ? WHERE id = ?', (XBTJPY2, 4))
+    c.execute('UPDATE statistic SET datestamp = ? WHERE id = ?', (XBTJPY3*jpy, 5))
+    c.execute("INSERT INTO opuIN (currency, datestamp, keyword, id) VALUES(?, ?, ?,?)",("xbtjpy", date, XBTJPY3*jpy, 1))
+    conn1.commit()
+    
+
+def takeProfit():
+    global orderQ, orderQ1
+    XBTUSD1 = client.Order.Order_new(symbol='XBTUSD', orderQty=orderQ,ordType= "Market").result()
+    XBTUSD3  = XBTUSD1[0]["price"] #id order
+    c.execute("INSERT INTO opuIN (currency, datestamp, keyword, id) VALUES(?, ?, ?,?)",("xbtjpy", date, XBTUSD3, 2))
+    XBTJPY1 = client.Order.Order_new(symbol='XBTJPY', orderQty=-orderQ1,ordType= "Market").result()
+    XBTJPY3  = XBTJPY1[0]["price"] #id order
+    c.execute("INSERT INTO opuIN (currency, datestamp, keyword, id) VALUES(?, ?, ?,?)",("xbtjpy", date, XBTJPY3*jpy, 2))
+    conn1.commit()
+    sleep(5)
+
+def checkarb():
+    global ordSta, ordSta1, orderQ, orderQ1
+    if ordSta1 == 0 and perDiff > 4: #if there is not a open order #if the arb is big enought
+        ordSta1 = ordSta1 +1
+        c.execute('UPDATE orderStatus SET two = ? WHERE id = ?', (1, 1))
+        conn1.commit()
+        if ror > ror3:
+            takeOrder()
+        elif ror < ror3:
+            conn1.commit()
+            orderQ = -orderQ
+            orderQ1 = -orderQ1
+            takeOrder()
+    
+    elif ordSta1 == 1:
+        if perDiff < 1 or profitUsd > 8: #if an order is already taken 
+            ordSta1 = ordSta1 +1
+            c.execute('UPDATE orderStatus SET two = ? WHERE id = ?', (0, 1))
+            if ror > ror3:
+                takeProfit()
+            elif ror < ror3:
+                orderQ = -orderQ
+                orderQ1 = -orderQ1
+                takeProfit()
+while True:
+    date =datetime.datetime.now().strftime("%d %H:%M")
+    profit = ws2.funds()["unrealisedPnl"] #checking profit only
+    profitNet = ws2.funds()["marginBalance"]
+    ror = ws.get_instrument()["askPrice"]           #XBTUSD
+    ror2 = ws2.get_instrument()["askPrice"]         #JPYXBT
+    ror3 = ror2 * jpy                        #JPYXBT converted to usd
+    #telegramBot()
+    max1 = max(ror,ror3)
+    min1 = min(ror,ror3)
+    perDiff = (max1 / min1 - 1) * 100
+    profitUsd = profit*satoshi*ror
+    print (ror, ror3, "(",ror2,")") #converting the jpy to usd---- printing (price, price, price in yen)
+    print(perDiff, "             ", reCheck, "   profit in SATOSHI = ", profit, "   Total balnce =  ", profitNet ,profitNet*satoshi*ror, "   profit in USD=  ",profitUsd )
+    reCheck = reCheck + 1
+
+    sleep(0.1)
+    print("__________________________________________________\n")
+    
+
+    checkarb() 
+    if reCheck == reCheck1:
+        telegramBot()
+        reCheck1 = reCheck1 + 5000
+
+    #c.execute("INSERT INTO arbitrage (one, two, three,four) VALUES(?, ?, ?,?)",(date,ror,ror3 ,perDiff)) #writing down the percentage
+    #conn1.commit()
+
+    
+
+
+
+
+
+        
